@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Mosquito Lab Drone</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #101820;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      touch-action: manipulation;
+      user-select: none;
+    }
+
+    #gameWrap {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(#d7ecff, #f4fbff);
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      max-width: 540px;
+      max-height: 960px;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.25);
+    }
+
+    #hint {
+      position: fixed;
+      bottom: 12px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: rgba(255, 255, 255, 0.88);
+      font-size: 13px;
+      pointer-events: none;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+    }
+
+    #settingsOverlay {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(#d8edff, #eef8ff);
+      padding: 18px;
+      box-sizing: border-box;
+    }
+
+    #settingsCard {
+      width: min(92vw, 390px);
+      background: rgba(16, 24, 32, 0.88);
+      color: white;
+      border-radius: 22px;
+      padding: 24px;
+      box-sizing: border-box;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.28);
+    }
+
+    #settingsCard h1 {
+      margin: 0 0 6px;
+      font-size: 29px;
+      line-height: 1.1;
+      text-align: center;
+    }
+
+    #settingsCard p {
+      margin: 0 0 22px;
+      color: rgba(255, 255, 255, 0.84);
+      text-align: centre;
+      text-align: center;
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    .controlBlock {
+      margin: 20px 0;
+    }
+
+    .controlTop {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: baseline;
+      margin-bottom: 8px;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .controlValue {
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.82);
+      white-space: nowrap;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: #6db7ff;
+    }
+
+    .rangeLabels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.68);
+    }
+
+    #startButton {
+      width: 100%;
+      margin-top: 18px;
+      padding: 14px 18px;
+      border: none;
+      border-radius: 14px;
+      background: #7cc4ff;
+      color: #101820;
+      font-size: 18px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    #startButton:active {
+      transform: scale(0.98);
+    }
+
+    .smallNote {
+      margin-top: 14px;
+      text-align: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.68);
+    }
+  </style>
+</head>
+<body>
+  <div id="settingsOverlay">
+    <div id="settingsCard">
+      <h1>Mosquito Lab Drone</h1>
+      <p>Fly a small quad drone through laboratory columns. Choose the gap and speed before starting.</p>
+
+      <div class="controlBlock">
+        <div class="controlTop">
+          <span>Column gap</span>
+          <span id="gapValue" class="controlValue">152 px</span>
+        </div>
+        <input id="gapSlider" type="range" min="95" max="230" value="152" step="5" />
+        <div class="rangeLabels">
+          <span>Narrow</span>
+          <span>Wide</span>
+        </div>
+      </div>
+
+      <div class="controlBlock">
+        <div class="controlTop">
+          <span>Game speed</span>
+          <span id="speedValue" class="controlValue">1.00x</span>
+        </div>
+        <input id="speedSlider" type="range" min="45" max="160" value="100" step="5" />
+        <div class="rangeLabels">
+          <span>Very slow</span>
+          <span>Fast</span>
+        </div>
+      </div>
+
+      <button id="startButton">Start game</button>
+      <div class="smallNote">Tap screen, click, or press Space to lift the drone.</div>
+    </div>
+  </div>
+
+  <div id="gameWrap">
+    <canvas id="game"></canvas>
+  </div>
+  <div id="hint">Tap screen, click, or press Space</div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const settingsOverlay = document.getElementById("settingsOverlay");
+    const startButton = document.getElementById("startButton");
+    const gapSlider = document.getElementById("gapSlider");
+    const speedSlider = document.getElementById("speedSlider");
+    const gapValue = document.getElementById("gapValue");
+    const speedValue = document.getElementById("speedValue");
+
+    let W = 360;
+    let H = 640;
+    let dpr = 1;
+
+    const state = {
+      mode: "menu",
+      score: 0,
+      best: Number(localStorage.getItem("Mosquito_lab_best") || 0),
+      frame: 0,
+      lastTime: 0
+    };
+
+    const drone = {
+      x: 92,
+      y: 270,
+      r: 17,
+      vy: 0,
+      gravity: 1350,
+      flap: -420,
+      rotation: 0,
+      rotorPhase: 0
+    };
+
+    const world = {
+      groundH: 78,
+      pipeW: 62,
+      gap: 152,
+      speedMultiplier: 1.0,
+      basePipeSpeed: 165,
+      basePipeEvery: 1.45,
+      pipeEvery: 1.45,
+      nextPipeTime: 0,
+      clouds: []
+    };
+
+    let pipes = [];
+
+    function updateSettingsLabels() {
+      const gap = Number(gapSlider.value);
+      const speed = Number(speedSlider.value) / 100;
+      gapValue.textContent = gap + " px";
+      speedValue.textContent = speed.toFixed(2) + "x";
+    }
+
+    function applySettings() {
+      world.gap = Number(gapSlider.value);
+      world.speedMultiplier = Number(speedSlider.value) / 100;
+      world.pipeEvery = world.basePipeEvery / world.speedMultiplier;
+
+      localStorage.setItem("Mosquito _lab_gap", world.gap);
+      localStorage.setItem("Mosquito _lab_speed_percent", Number(speedSlider.value));
+    }
+
+    function loadSavedSettings() {
+      const savedGap = Number(localStorage.getItem("Mosquito _lab_gap"));
+      const savedSpeedPercent = Number(localStorage.getItem("Mosquito _lab_speed_percent"));
+
+      if (savedGap >= 95 && savedGap <= 230) gapSlider.value = savedGap;
+      if (savedSpeedPercent >= 45 && savedSpeedPercent <= 160) speedSlider.value = savedSpeedPercent;
+
+      updateSettingsLabels();
+      applySettings();
+    }
+
+    function resize() {
+      const maxW = 540;
+      const maxH = 960;
+      const viewW = window.innerWidth;
+      const viewH = window.innerHeight;
+
+      W = Math.min(maxW, viewW);
+      H = Math.min(maxH, viewH);
+
+      dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      canvas.width = Math.floor(W * dpr);
+      canvas.height = Math.floor(H * dpr);
+      canvas.style.width = W + "px";
+      canvas.style.height = H + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      drone.x = Math.max(80, W * 0.26);
+      resetClouds();
+    }
+
+    function resetClouds() {
+      world.clouds = [
+        { x: W * 0.12, y: H * 0.12, s: 1.0 },
+        { x: W * 0.58, y: H * 0.20, s: 0.8 },
+        { x: W * 0.82, y: H * 0.10, s: 1.15 }
+      ];
+    }
+
+    function resetGame() {
+      state.mode = "start";
+      state.score = 0;
+      state.frame = 0;
+      drone.y = H * 0.42;
+      drone.vy = 0;
+      drone.rotation = 0;
+      drone.rotorPhase = 0;
+      pipes = [];
+      world.nextPipeTime = 0.65;
+    }
+
+    function beginFromMenu() {
+      applySettings();
+      settingsOverlay.style.display = "none";
+      resetGame();
+    }
+
+    function startPlaying() {
+      state.mode = "playing";
+      state.score = 0;
+      drone.y = H * 0.42;
+      drone.vy = drone.flap;
+      drone.rotation = -0.22;
+      pipes = [];
+      world.nextPipeTime = 0.5;
+    }
+
+    function flap() {
+      if (state.mode === "menu") return;
+
+      if (state.mode === "start") {
+        startPlaying();
+        return;
+      }
+
+      if (state.mode === "gameover") {
+        resetGame();
+        startPlaying();
+        return;
+      }
+
+      drone.vy = drone.flap;
+      drone.rotation = -0.30;
+    }
+
+    function spawnPipe() {
+      const skyBottom = H - world.groundH;
+      const marginTop = 45;
+      const marginBottom = 45;
+
+      const selectedGap = Math.min(world.gap, skyBottom - marginTop - marginBottom - 20);
+
+      const minTopH = marginTop;
+      const maxTopH = skyBottom - marginBottom - selectedGap;
+
+      const topH = minTopH + Math.random() * (maxTopH - minTopH);
+      const bottomY = topH + selectedGap;
+
+      pipes.push({
+        x: W + 20,
+        topH: topH,
+        bottomY: bottomY,
+        gap: selectedGap,
+        passed: false
+      });
+    }
+
+    function circleRectCollision(cx, cy, cr, rx, ry, rw, rh) {
+      const closestX = Math.max(rx, Math.min(cx, rx + rw));
+      const closestY = Math.max(ry, Math.min(cy, ry + rh));
+      const dx = cx - closestX;
+      const dy = cy - closestY;
+      return (dx * dx + dy * dy) < cr * cr;
+    }
+
+    function gameOver() {
+      state.mode = "gameover";
+      state.best = Math.max(state.best, state.score);
+      localStorage.setItem("Mosquito_lab_best", state.best);
+    }
+
+    function update(dt) {
+      state.frame++;
+
+      for (const c of world.clouds) {
+        c.x -= 12 * dt * c.s;
+        if (c.x < -90) c.x = W + 70;
+      }
+
+      drone.rotorPhase += dt * (state.mode === "playing" ? 22 : 12);
+
+      if (state.mode === "menu" || state.mode === "start") {
+        drone.y = H * 0.42 + Math.sin(state.frame * 0.05) * 9;
+        return;
+      }
+
+      if (state.mode !== "playing") return;
+
+      drone.vy += drone.gravity * dt;
+      drone.y += drone.vy * dt;
+      drone.rotation += 1.4 * dt;
+      drone.rotation = Math.max(-0.40, Math.min(0.65, drone.rotation));
+
+      world.nextPipeTime -= dt;
+      if (world.nextPipeTime <= 0) {
+        spawnPipe();
+        world.nextPipeTime = world.pipeEvery;
+      }
+
+      const speed = world.basePipeSpeed * world.speedMultiplier;
+
+      for (const p of pipes) {
+        p.x -= speed * dt;
+
+        if (!p.passed && p.x + world.pipeW < drone.x) {
+          p.passed = true;
+          state.score++;
+        }
+
+        const hitTop = circleRectCollision(drone.x, drone.y, drone.r, p.x, 0, world.pipeW, p.topH);
+        const hitBottom = circleRectCollision(drone.x, drone.y, drone.r, p.x, p.bottomY, world.pipeW, H - world.groundH - p.bottomY);
+
+        if (hitTop || hitBottom) {
+          gameOver();
+        }
+      }
+
+      pipes = pipes.filter(p => p.x > -world.pipeW - 40);
+
+      if (drone.y + drone.r >= H - world.groundH || drone.y - drone.r <= 0) {
+        gameOver();
+      }
+    }
+
+    function drawCloud(x, y, s) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(s, s);
+      ctx.fillStyle = "rgba(255,255,255,0.80)";
+      ctx.beginPath();
+      ctx.arc(0, 12, 20, 0, Math.PI * 2);
+      ctx.arc(24, 7, 26, 0, Math.PI * 2);
+      ctx.arc(52, 15, 18, 0, Math.PI * 2);
+      ctx.rect(-6, 14, 68, 18);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawColumnBody(x, y, w, h) {
+      const grad = ctx.createLinearGradient(x, y, x + w, y);
+      grad.addColorStop(0, "#cfd8df");
+      grad.addColorStop(0.2, "#eef4f7");
+      grad.addColorStop(0.5, "#bcc7cf");
+      grad.addColorStop(0.8, "#e9f0f4");
+      grad.addColorStop(1, "#aab7c2");
+      ctx.fillStyle = grad;
+      ctx.fillRect(x, y, w, h);
+
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.fillRect(x + 8, y, 10, h);
+
+      ctx.fillStyle = "rgba(68,92,110,0.30)";
+      ctx.fillRect(x + w - 10, y, 10, h);
+    }
+
+    function drawColumnCap(x, y, w, h) {
+      const grad = ctx.createLinearGradient(x, y, x + w, y);
+      grad.addColorStop(0, "#96a8b5");
+      grad.addColorStop(0.5, "#d7e1e8");
+      grad.addColorStop(1, "#879aa7");
+      ctx.fillStyle = grad;
+      ctx.fillRect(x, y, w, h);
+
+      ctx.strokeStyle = "rgba(47,63,76,0.50)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    function drawLabMarkers(x, y, w, h, upsideDown = false) {
+      ctx.fillStyle = "rgba(98,161,255,0.18)";
+      const bandH = 14;
+      const step = 54;
+      if (!upsideDown) {
+        for (let yy = y + 22; yy < y + h - 22; yy += step) {
+          ctx.fillRect(x + 8, yy, w - 16, bandH);
+        }
+      } else {
+        for (let yy = y + 18; yy < y + h - 22; yy += step) {
+          ctx.fillRect(x + 8, yy, w - 16, bandH);
+        }
+      }
+
+      ctx.strokeStyle = "rgba(59,106,160,0.55)";
+      ctx.lineWidth = 1;
+      for (let yy = y + 12; yy < y + h - 8; yy += 18) {
+        ctx.beginPath();
+        ctx.moveTo(x + w * 0.62, yy);
+        ctx.lineTo(x + w * 0.82, yy);
+        ctx.stroke();
+      }
+    }
+
+    function drawPipe(p) {
+      const pipeW = world.pipeW;
+      const capH = 18;
+
+      drawColumnBody(p.x, 0, pipeW, p.topH);
+      drawLabMarkers(p.x, 0, pipeW, p.topH, true);
+      drawColumnCap(p.x - 5, p.topH - capH, pipeW + 10, capH);
+
+      const bottomH = H - world.groundH - p.bottomY;
+      drawColumnBody(p.x, p.bottomY, pipeW, bottomH);
+      drawLabMarkers(p.x, p.bottomY, pipeW, bottomH, false);
+      drawColumnCap(p.x - 5, p.bottomY, pipeW + 10, capH);
+
+      ctx.fillStyle = "rgba(119,210,255,0.25)";
+      ctx.fillRect(p.x + 4, p.topH + 5, pipeW - 8, Math.max(0, p.bottomY - p.topH - 10));
+    }
+
+    function drawRotorArm(ax, ay, bx, by) {
+      ctx.strokeStyle = "#6c7a86";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    }
+
+    function drawRotor(x, y, spin) {
+      ctx.save();
+      ctx.translate(x, y);
+
+      ctx.strokeStyle = "rgba(120,170,210,0.78)";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(-12 * Math.cos(spin), -4 * Math.sin(spin));
+      ctx.lineTo(12 * Math.cos(spin), 4 * Math.sin(spin));
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(-10 * Math.sin(spin), 3 * Math.cos(spin));
+      ctx.lineTo(10 * Math.sin(spin), -3 * Math.cos(spin));
+      ctx.stroke();
+
+      ctx.fillStyle = "#404c55";
+      ctx.beginPath();
+      ctx.arc(0, 0, 4.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawDrone() {
+      ctx.save();
+      ctx.translate(drone.x, drone.y);
+      ctx.rotate(drone.rotation);
+
+      drawRotorArm(-4, -3, -18, -14);
+      drawRotorArm(4, -3, 18, -14);
+      drawRotorArm(-4, 3, -18, 14);
+      drawRotorArm(4, 3, 18, 14);
+
+      drawRotor(-18, -14, drone.rotorPhase);
+      drawRotor(18, -14, drone.rotorPhase + 0.8);
+      drawRotor(-18, 14, drone.rotorPhase + 1.6);
+      drawRotor(18, 14, drone.rotorPhase + 2.4);
+
+      const bodyGrad = ctx.createLinearGradient(-16, -10, 16, 10);
+      bodyGrad.addColorStop(0, "#4d5d69");
+      bodyGrad.addColorStop(0.5, "#6f8492");
+      bodyGrad.addColorStop(1, "#37424b");
+      ctx.fillStyle = bodyGrad;
+      ctx.beginPath();
+      ctx.roundRect(-16, -10, 32, 20, 8);
+      ctx.fill();
+
+      ctx.fillStyle = "#86d0ff";
+      ctx.beginPath();
+      ctx.roundRect(-8, -5, 16, 10, 4);
+      ctx.fill();
+
+      ctx.fillStyle = "#d8f3ff";
+      ctx.beginPath();
+      ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#ff6b6b";
+      ctx.beginPath();
+      ctx.arc(-8, 0, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#7dffa6";
+      ctx.beginPath();
+      ctx.arc(8, 0, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawGround() {
+      const y = H - world.groundH;
+
+      const floorGrad = ctx.createLinearGradient(0, y, 0, H);
+      floorGrad.addColorStop(0, "#dde6eb");
+      floorGrad.addColorStop(1, "#b2c1cb");
+      ctx.fillStyle = floorGrad;
+      ctx.fillRect(0, y, W, world.groundH);
+
+      ctx.fillStyle = "#94a7b3";
+      ctx.fillRect(0, y, W, 8);
+
+      ctx.strokeStyle = "rgba(100,122,136,0.35)";
+      ctx.lineWidth = 1;
+      for (let xx = 0; xx < W; xx += 28) {
+        ctx.beginPath();
+        ctx.moveTo(xx, y + 8);
+        ctx.lineTo(xx, H);
+        ctx.stroke();
+      }
+      for (let yy = y + 16; yy < H; yy += 22) {
+        ctx.beginPath();
+        ctx.moveTo(0, yy);
+        ctx.lineTo(W, yy);
+        ctx.stroke();
+      }
+    }
+
+    function drawLabBackground() {
+      const bg = ctx.createLinearGradient(0, 0, 0, H);
+      bg.addColorStop(0, "#d8edff");
+      bg.addColorStop(0.55, "#eef8ff");
+      bg.addColorStop(1, "#f7fbff");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      for (let i = 0; i < 5; i++) {
+        const bx = 18 + i * (W / 5);
+        const by = 70 + (i % 2) * 18;
+        ctx.fillRect(bx, by, 48, 7);
+        ctx.fillRect(bx + 5, by + 12, 38, 5);
+      }
+
+      for (const c of world.clouds) {
+        drawCloud(c.x, c.y, c.s);
+      }
+    }
+
+    function drawTextCentre(text, y, size, alpha = 1) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.lineWidth = Math.max(3, size * 0.12);
+      ctx.font = "700 " + size + "px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.strokeText(text, W / 2, y);
+      ctx.fillText(text, W / 2, y);
+      ctx.restore();
+    }
+
+    function drawPanel(lines) {
+      const panelW = Math.min(316, W - 44);
+      const panelH = 178;
+      const x = (W - panelW) / 2;
+      const y = H * 0.34;
+
+      ctx.fillStyle = "rgba(16, 24, 32, 0.80)";
+      roundRect(x, y, panelW, panelH, 16);
+      ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      for (let i = 0; i < lines.length; i++) {
+        ctx.font = i === 0 ? "700 24px system-ui, sans-serif" : "500 17px system-ui, sans-serif";
+        ctx.fillText(lines[i], W / 2, y + 38 + i * 34);
+      }
+    }
+
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+
+      drawLabBackground();
+
+      for (const p of pipes) {
+        drawPipe(p);
+      }
+
+      drawGround();
+      drawDrone();
+
+      if (state.mode === "playing") {
+        drawTextCentre(String(state.score), 58, 44);
+      }
+
+      if (state.mode === "start") {
+        drawTextCentre("Mosquito Lab Drone", H * 0.22, 30);
+        drawPanel([
+          "Tap to start",
+          "Guide the drone through the columns",
+          "Best: " + state.best
+        ]);
+      }
+
+      if (state.mode === "gameover") {
+        drawTextCentre("Game Over", H * 0.22, 36);
+        drawPanel([
+          "Score: " + state.score,
+          "Best: " + state.best,
+          "Tap to restart"
+        ]);
+      }
+    }
+
+    function loop(time) {
+      if (!state.lastTime) state.lastTime = time;
+      const dt = Math.min(0.033, (time - state.lastTime) / 1000);
+      state.lastTime = time;
+
+      update(dt);
+      draw();
+
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener("pointerdown", function (e) {
+      if (state.mode === "menu") return;
+      e.preventDefault();
+      flap();
+    }, { passive: false });
+
+    window.addEventListener("keydown", function (e) {
+      if (e.code === "Space" || e.code === "ArrowUp") {
+        if (state.mode === "menu") return;
+        e.preventDefault();
+        flap();
+      }
+    });
+
+    gapSlider.addEventListener("input", function () {
+      updateSettingsLabels();
+      applySettings();
+    });
+
+    speedSlider.addEventListener("input", function () {
+      updateSettingsLabels();
+      applySettings();
+    });
+
+    startButton.addEventListener("click", function (e) {
+      e.preventDefault();
+      beginFromMenu();
+    });
+
+    window.addEventListener("resize", resize);
+
+    resize();
+    loadSavedSettings();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
